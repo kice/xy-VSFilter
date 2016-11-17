@@ -113,20 +113,37 @@ BEGIN_MESSAGE_MAP(CSystrayWindow, CWnd)
 	ON_REGISTERED_MESSAGE(WM_DVSSHOWHIDESUB, OnDVSShowHideSub)
 	ON_REGISTERED_MESSAGE(s_uTaskbarRestart, OnTaskBarRestart)
 	ON_REGISTERED_MESSAGE(WM_NOTIFYICON, OnNotifyIcon)
+	ON_WM_HOTKEY()
 END_MESSAGE_MAP()
+
+#define HOTKEY_DELAY_PLUS	0x2132131
+#define HOTKEY_DELAY_MINUS	0x9879831
+#define HOTKEY_DELAY_RESET	0x4323245
 
 int CSystrayWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
-	if(CWnd::OnCreate(lpCreateStruct) == -1)
+	if (CWnd::OnCreate(lpCreateStruct) == -1)
 		return -1;
 
-	if(g_hHook == INVALID_HANDLE_VALUE)
-	{
+	if (g_hHook == INVALID_HANDLE_VALUE) {
 		AFX_MANAGE_STATE(AfxGetStaticModuleState());
-//		g_hHook = SetWindowsHookEx(WH_GETMESSAGE, (HOOKPROC)HookProc, AfxGetInstanceHandle(), 0);
+		//		g_hHook = SetWindowsHookEx(WH_GETMESSAGE, (HOOKPROC)HookProc, AfxGetInstanceHandle(), 0);
 	}
 
 	SetTimer(1, 5000, NULL);
+
+	if (RegisterHotKey(this->m_hWnd, HOTKEY_DELAY_PLUS, MOD_ALT | MOD_NOREPEAT, VK_OEM_COMMA) &&
+		RegisterHotKey(this->m_hWnd, HOTKEY_DELAY_MINUS, MOD_ALT | MOD_NOREPEAT, VK_OEM_PERIOD) &&
+		RegisterHotKey(this->m_hWnd, HOTKEY_DELAY_RESET, MOD_ALT | MOD_NOREPEAT, VK_OEM_2)) {
+		OutputDebugStringW(L"Hotkey register successes");
+	}
+
+	if (RegisterHotKey(this->m_hWnd, HOTKEY_DELAY_PLUS, MOD_ALT | MOD_NOREPEAT, VK_OEM_MINUS) &&
+		RegisterHotKey(this->m_hWnd, HOTKEY_DELAY_MINUS, MOD_ALT | MOD_NOREPEAT, VK_OEM_PLUS) &&
+		RegisterHotKey(this->m_hWnd, HOTKEY_DELAY_RESET, MOD_ALT | MOD_NOREPEAT, 0x30))  //0x30 is '0'
+	{
+		OutputDebugStringW(L"Hotkey register successes");
+	}
 
 	PostMessage(s_uTaskbarRestart);
 
@@ -331,6 +348,62 @@ LRESULT CSystrayWindow::OnNotifyIcon(WPARAM wParam, LPARAM lParam)
 	}
 
 	return 0;
+}
+
+void CSystrayWindow::OnHotKey(UINT nHotKeyId, UINT nKey1, UINT nKey2)
+{
+	OutputDebugStringW(L"CSystrayWindow::OnHotKey");
+
+	HRESULT hr = NOERROR;
+
+	int delay, speedMul, SpeedDiv;
+
+	hr = m_tbid->dvs->get_SubtitleTiming(&delay, &speedMul, &SpeedDiv);
+
+	if (hr != S_OK) {
+		OutputDebugStringW(L"[OnHotKey] Get Subtitle Timing error");
+		return;
+	}
+
+	switch (nHotKeyId) {
+	case HOTKEY_DELAY_PLUS:
+		if (delay + 500 <= 180 * 60 * 1000) {
+			hr = m_tbid->dvs->put_SubtitleTiming(delay + 500, speedMul, SpeedDiv);
+		}
+		break;
+
+	case HOTKEY_DELAY_MINUS:
+		if (delay - 500 >= -180 * 60 * 1000) {
+			hr = m_tbid->dvs->put_SubtitleTiming(delay - 500, speedMul, SpeedDiv);
+		}
+		break;
+
+	case HOTKEY_DELAY_RESET:
+		if (delay != 0) {
+			hr = m_tbid->dvs->put_SubtitleTiming(0, speedMul, SpeedDiv);
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	if (hr != S_OK) {
+		OutputDebugStringW(L"[OnHotKey] Set Subtitle Timing error");
+		return;
+	}
+
+	hr = m_tbid->dvs->get_SubtitleTiming(&delay, &speedMul, &SpeedDiv);
+
+	if (hr != S_OK) {
+		OutputDebugStringW(L"[OnHotKey] Get Subtitle Timing error");
+		return;
+	}
+
+	std::wstring debugMsg = L"[OnHotKey] Delay Time:" + std::to_wstring(delay);
+	OutputDebugStringW(debugMsg.c_str());
+
+	CWnd::OnHotKey(nHotKeyId, nKey1, nKey2);
 }
 
 //
